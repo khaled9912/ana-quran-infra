@@ -1,0 +1,20 @@
+# Dependencies and generated state — recreate them with deploy.sh, never commit.
+jitsi/vendor/
+jitsi/.env
+jitsi/.env.bak
+
+# Runtime state written by the containers (prosody accounts, jicofo/jvb config,
+# web storage and TLS keys).
+jitsi/config/storage/
+jitsi/config/prosody/
+jitsi/config/jicofo/
+jitsi/config/jvb/
+jitsi/config/tmp/
+jitsi/config/web/custom-ca/
+
+# Any TLS material that lands in the tree.
+*.crt
+*.key
+*.pem
+
+.DS_Store
