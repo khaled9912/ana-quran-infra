@@ -1,6 +1,7 @@
 *.bak
 *.swp
 .env*
+!.env.example
 docker-compose.override.yml
 log-analyser/grafana
 **/.DS_Store

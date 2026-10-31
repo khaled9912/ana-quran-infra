@@ -1,0 +1,13 @@
+# Ana Quran — Jitsi Meet edge proxy.
+#
+# Install on the VPS at /etc/caddy/Caddyfile, replace the hostname, then:
+#   sudo systemctl reload caddy
+#
+# Caddy obtains and renews the Let's Encrypt certificate, redirects HTTP to
+# HTTPS, and proxies WebSocket upgrades (BOSH + XMPP-over-WebSocket signalling)
+# with no extra configuration. Jitsi keeps serving HTTP on 127.0.0.1:8000, which
+# is where .env points HTTP_PORT.
+meet.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8000
+}

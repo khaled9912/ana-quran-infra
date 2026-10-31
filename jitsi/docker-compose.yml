@@ -8,14 +8,16 @@ services:
             - /run:size=16M,mode=1750,exec
             - /tmp:size=16M,mode=1777,noexec
         ports:
-            - '${HTTP_PORT}:8000'
-            - '${HTTPS_PORT}:8443'
+            # Loopback by default: Caddy terminates TLS on 443, and locally the
+            # browser only needs localhost. Never publish these to the internet.
+            - '${HTTP_PORT:-127.0.0.1:8000}:8000'
+            - '${HTTPS_PORT:-127.0.0.1:8443}:8443'
         volumes:
-            - ${CONFIG}/web:/config:Z
-            - ${CONFIG}/storage/web:/storage:Z
-            - ${CONFIG}/web/custom-ca:/usr/local/share/ca-certificates:ro,z
-            - ${CONFIG}/storage/transcripts:/usr/share/jitsi-meet/transcripts:ro,z
-            - ${CONFIG}/tmp/web-load-test:/usr/share/jitsi-meet/load-test:Z
+            - ${CONFIG:?CONFIG is not set - run ./deploy.sh or set it in .env}/web:/config:Z
+            - ${CONFIG:?CONFIG is not set - run ./deploy.sh or set it in .env}/storage/web:/storage:Z
+            - ${CONFIG:?CONFIG is not set - run ./deploy.sh or set it in .env}/web/custom-ca:/usr/local/share/ca-certificates:ro,z
+            - ${CONFIG:?CONFIG is not set - run ./deploy.sh or set it in .env}/storage/transcripts:/usr/share/jitsi-meet/transcripts:ro,z
+            - ${CONFIG:?CONFIG is not set - run ./deploy.sh or set it in .env}/tmp/web-load-test:/usr/share/jitsi-meet/load-test:Z
         labels:
             service: "jitsi-web"
         environment:
@@ -225,10 +227,10 @@ services:
         labels:
             service: "jitsi-prosody"
         volumes:
-            - ${CONFIG}/prosody/config:/config:Z
-            - ${CONFIG}/prosody/prosody-plugins-custom:/prosody-plugins-custom:Z
-            - ${CONFIG}/storage/prosody:/var/lib/prosody:Z
-            - ${CONFIG}/prosody/custom-ca:/usr/local/share/ca-certificates:ro,z
+            - ${CONFIG:?CONFIG is not set - run ./deploy.sh or set it in .env}/prosody/config:/config:Z
+            - ${CONFIG:?CONFIG is not set - run ./deploy.sh or set it in .env}/prosody/prosody-plugins-custom:/prosody-plugins-custom:Z
+            - ${CONFIG:?CONFIG is not set - run ./deploy.sh or set it in .env}/storage/prosody:/var/lib/prosody:Z
+            - ${CONFIG:?CONFIG is not set - run ./deploy.sh or set it in .env}/prosody/custom-ca:/usr/local/share/ca-certificates:ro,z
         environment:
             - AUTH_TYPE
             - DISABLE_POLLS
@@ -383,8 +385,8 @@ services:
         ports:
             - '127.0.0.1:${JICOFO_REST_PORT:-8888}:8888'
         volumes:
-            - ${CONFIG}/jicofo:/config:Z
-            - ${CONFIG}/jicofo/custom-ca:/usr/local/share/ca-certificates:ro,z
+            - ${CONFIG:?CONFIG is not set - run ./deploy.sh or set it in .env}/jicofo:/config:Z
+            - ${CONFIG:?CONFIG is not set - run ./deploy.sh or set it in .env}/jicofo/custom-ca:/usr/local/share/ca-certificates:ro,z
         labels:
             service: "jitsi-jicofo"
         environment:
@@ -489,8 +491,8 @@ services:
             - '${JVB_PORT:-10000}:${JVB_PORT:-10000}/udp'
             - '127.0.0.1:${JVB_COLIBRI_PORT:-8080}:8080'
         volumes:
-            - ${CONFIG}/jvb:/config:Z
-            - ${CONFIG}/jvb/custom-ca:/usr/local/share/ca-certificates:ro,z
+            - ${CONFIG:?CONFIG is not set - run ./deploy.sh or set it in .env}/jvb:/config:Z
+            - ${CONFIG:?CONFIG is not set - run ./deploy.sh or set it in .env}/jvb/custom-ca:/usr/local/share/ca-certificates:ro,z
         labels:
             service: "jitsi-jvb"
         environment:

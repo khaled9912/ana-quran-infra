@@ -10,16 +10,16 @@ here is imported by the app.
 
 ## What runs
 
-[docker-jitsi-meet](https://github.com/jitsi/docker-jitsi-meet) pinned to
-`stable-11248-2`, with a small overlay:
+A vendored copy of [docker-jitsi-meet](https://github.com/jitsi/docker-jitsi-meet)
+at **`stable-11248-2`**, plus a small deployment overlay:
 
 | File | Purpose |
 | --- | --- |
 | `jitsi/.env.example` | Non-secret configuration (public URL, ports, media IP, auth flags). `.env` is generated from it. |
+| `jitsi/deploy.sh` | Validates `.env`, generates the component passwords, starts/stops the stack. |
+| `jitsi/Caddyfile` | Production edge: TLS + WebSocket proxy in front of the web container. |
 | `jitsi/config/web/custom-config.js` | Forces the room UI to English (otherwise it follows the viewer's browser language and Arabic browsers get an RTL room). |
 | `jitsi/config/web/custom-interface_config.js` | Removes the Jitsi watermark, brand mark and "powered by" footer. |
-| `jitsi/Caddyfile` | Production edge: TLS + WebSocket proxy in front of the web container. |
-| `jitsi/deploy.sh` | Clones the pinned upstream tag into `jitsi/vendor/`, fills `.env`, starts/stops the stack. |
 
 ```
 jitsi/
@@ -27,15 +27,29 @@ jitsi/
 ├── Caddyfile
 ├── deploy.sh
 ├── config/
-│   └── web/
+│   └── web/                     # overlay config the web image copies at boot
 │       ├── custom-config.js
 │       └── custom-interface_config.js
-└── vendor/            # cloned upstream, gitignored
+├── docker-compose.yml           # upstream, two local changes (see below)
+├── web/ prosody/ jicofo/ jvb/   # upstream images + entrypoints
+└── ...                          # rest of docker-jitsi-meet
 ```
 
-Committed: overlay config + templates + this doc.
-Not committed: `.env`, upstream clone, container state (`config/storage`,
-`config/prosody`, `config/jicofo`, `config/jvb`), certificates and keys.
+Committed: the vendored source, the overlay, and this doc.
+Not committed: `.env`, container state (`config/storage`, `config/prosody`,
+`config/jicofo`, `config/jvb`), certificates and keys.
+
+**Local changes to the upstream tree** — all three fix footguns that only bite
+on a real server or on a fresh clone:
+
+1. Every `${CONFIG}` mount is now `${CONFIG:?CONFIG is not set …}`, so a missing
+   `.env` fails with a clear message instead of mounting the host's `/web`,
+   `/jvb`, `/prosody/config`.
+2. `web` publishes `8000`/`8443` on **127.0.0.1** by default, so they are never
+   reachable from the internet — Caddy owns 443 in production, and locally the
+   browser only needs `localhost`.
+3. `jitsi/.gitignore` re-includes `.env.example`, which upstream's `.env*` rule
+   would otherwise hide.
 
 ## Local development (macOS)
 
@@ -44,13 +58,18 @@ Prerequisites: Docker Desktop, `openssl`, and [mkcert](https://github.com/FiloSo
 ```bash
 cd jitsi
 cp .env.example .env
-# edit .env: PUBLIC_URL=https://localhost:8443, JVB_ADVERTISE_IPS=127.0.0.1
-./deploy.sh
+```
+
+Edit `.env` for local use:
+
+```
+PUBLIC_URL=https://localhost:8443
+JVB_ADVERTISE_IPS=127.0.0.1
 ```
 
 Plain HTTP is not an option locally: the Jitsi external API always loads
 `https://<domain>/external_api.js`, so the container must speak TLS the browser
-trusts. Generate a certificate for `localhost` with mkcert and drop it in:
+trusts. Generate a certificate for `localhost` with mkcert:
 
 ```bash
 mkcert -install                     # one-time, asks for your keychain password
@@ -58,7 +77,7 @@ mkdir -p config/storage/web/keys
 mkcert -cert-file config/storage/web/keys/cert.crt \
        -key-file  config/storage/web/keys/cert.key \
        localhost 127.0.0.1 ::1
-./deploy.sh                          # restart to pick the certificate up
+./deploy.sh
 ```
 
 Then point the app at it — `FE/.env.local`:
@@ -92,15 +111,8 @@ peer-to-peer and the server only relays signalling).
 | 22 | TCP | SSH — restrict to your IP if possible |
 
 Point a DNS `A` record (e.g. `meet.yourdomain.com`) at the VPS before starting,
-otherwise Caddy cannot issue the certificate. Do **not** expose 8000/8443
-publicly — bind them to loopback in `.env`:
-
-```
-PUBLIC_URL=https://meet.yourdomain.com
-HTTP_PORT=127.0.0.1:8000
-HTTPS_PORT=127.0.0.1:8443
-JVB_ADVERTISE_IPS=<public IPv4 of the VPS>
-```
+otherwise Caddy cannot issue the certificate. `8000` and `8443` stay on
+loopback; do not open them.
 
 ### 2. Install
 
@@ -114,11 +126,12 @@ curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --d
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
 sudo apt update && sudo apt install -y caddy
 
-git clone <this repo> ~/ana-quran-infra
-cd ~/ana-quran-infra/jitsi
+git clone https://github.com/khaled9912/ana-quran-infra.git
+cd ana-quran-infra/jitsi
 cp .env.example .env
-$EDITOR .env          # PUBLIC_URL, ports, JVB_ADVERTISE_IPS
-./deploy.sh           # clones upstream, generates passwords, starts the stack
+$EDITOR .env          # PUBLIC_URL=https://meet.yourdomain.com
+                      # JVB_ADVERTISE_IPS=<public IPv4>
+./deploy.sh           # validates .env, generates passwords, starts the stack
 ```
 
 Then install the edge proxy:
@@ -153,14 +166,17 @@ the API's `AllowedOrigins` (that list is about browser calls to the API).
 ## Operations
 
 ```bash
-./deploy.sh              # start / recreate after an .env or config change
-./deploy.sh down         # stop everything (state under config/ survives)
-./deploy.sh logs jvb     # follow a container's logs
+./deploy.sh               # start / recreate after an .env change
+./deploy.sh restart web   # re-apply config/web/*.js after editing the overlay
+./deploy.sh down          # stop everything (state under config/ survives)
+./deploy.sh logs jvb      # follow a container's logs
 ```
 
-- **Updating Jitsi**: change `UPSTREAM_TAG` in `deploy.sh` (and the tag in this
-  README), delete `jitsi/vendor/`, re-run `./deploy.sh`. Overlay files normally
-  survive upgrades; re-check `custom-interface_config.js` against release notes.
+- **Updating Jitsi**: the source is vendored, so there is no `git pull`. Fetch
+  the new upstream tag into a scratch directory and diff it against `jitsi/`
+  (expect only the overlay files and the two compose changes above), copy the
+  new tree in, then `./deploy.sh`. Re-check `custom-interface_config.js` against
+  the release notes — branding settings occasionally move.
 - **Backups**: nothing here is user data. Room history, recordings and class
   reports live in the app and its database.
 - **Restarting the box** is safe; containers use `unless-stopped`.
