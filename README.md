@@ -343,6 +343,29 @@ changes under `README`, `FE/` or the API are ignored by the `paths` filter. If
 you want a human gate, delete the `push` trigger and keep only
 `workflow_dispatch`, or attach a GitHub Environment with required reviewers.
 
+#### Do I have to pull on the VM by hand?
+
+**No.** Pushing to `master` *is* the deploy. GitHub runs `git fetch` +
+`git merge --ff-only` on the box and then `./deploy.sh`; you never log in for a
+normal change.
+
+The `git pull` is performed on the VM, but it is triggered by the runner after
+your push — the VM itself has no watcher, cron job or webhook listener.
+
+Manual work is only needed in these cases:
+
+| Situation | What you do |
+| --- | --- |
+| Rollback | `git revert <sha>`, push, let the Action deploy |
+| Action failed, disabled, or GitHub outage | `ssh ubuntu@<ip>`, then `cd ~/ana-quran-infra && git pull --ff-only && cd jitsi && ./deploy.sh` |
+| You edited `jitsi/.env` on the server | Nothing is pulled (it is gitignored); run `./deploy.sh` to apply |
+| Checking what is actually running | `git -C ~/ana-quran-infra log --oneline -1` |
+| First install on a new box | see "Moving to another provider" |
+
+If you ever hand-edit a **tracked** file on the VM, `--ff-only` will refuse to
+merge until you revert or commit that edit — by design, so a stray edit cannot
+be silently overwritten.
+
 ```bash
 ./deploy.sh               # start / recreate after an .env change
 ./deploy.sh restart web   # re-apply config/web/*.js after editing the overlay
