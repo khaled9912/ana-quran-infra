@@ -67,6 +67,13 @@ esac
 # Created ahead of the containers so the bind mounts never fall back to "/".
 mkdir -p config/storage/web config/prosody config/jicofo config/jvb config/tmp
 
+# The images run as uid 1000. Cloud images don't always give the deploy user
+# that uid (Oracle's ubuntu user is 1001), and the entrypoints refuse to start
+# when the bind mounts are not writable by 1000.
+if [ "$(uname -s)" = "Linux" ] && [ "$(id -u)" != "1000" ]; then
+  sudo chown -R 1000:1000 config
+fi
+
 log "Starting Jitsi"
 docker compose up -d
 

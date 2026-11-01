@@ -1,0 +1,60 @@
+name: Deploy Jitsi
+
+# The Jitsi stack runs on a single VM that is not managed by any platform, so
+# "deploy" means: pull the new commit on the box and reconcile the containers.
+#
+# Auth: ~/.ssh/gh-jitsi-deploy (private half in the JITSI_DEPLOY_KEY secret).
+# Its public half is installed in the VM's authorized_keys with
+#   command="/home/ubuntu/deploy-jitsi.sh",restrict
+# so the key can run a deploy and nothing else — no shell, no forwarding.
+#
+# Only jitsi/** triggers this. Docs-only commits do not restart live rooms.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "jitsi/**"
+      - ".github/workflows/deploy-jitsi.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-jitsi
+  cancel-in-progress: false
+
+env:
+  DEPLOY_HOST: 143.47.237.128
+  DEPLOY_USER: ubuntu
+  PUBLIC_URL: https://meet.143-47-237-128.sslip.io
+
+jobs:
+  deploy:
+    name: Pull and reconcile the stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install deploy key
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.JITSI_DEPLOY_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Pull and deploy on the VM
+        run: |
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o IdentitiesOnly=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST"
+
+      - name: Verify the public endpoint
+        run: |
+          url="$PUBLIC_URL/external_api.js"
+          for _ in $(seq 1 30); do
+            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$url" || true)"
+            if [ "$code" = "200" ]; then
+              echo "$url -> 200"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "public check failed (last status: ${code:-none})" >&2
+          exit 1
