@@ -20,6 +20,8 @@ at **`stable-11248-2`**, plus a small deployment overlay:
 | `jitsi/Caddyfile` | Production edge: TLS + WebSocket proxy in front of the web container. |
 | `jitsi/config/web/custom-config.js` | Forces the room UI to English (otherwise it follows the viewer's browser language and Arabic browsers get an RTL room). |
 | `jitsi/config/web/custom-interface_config.js` | Removes the Jitsi watermark, brand mark and "powered by" footer. |
+| `jitsi/config/web/nginx-custom/branding.conf` | Rewrites the room page's `<title>` / Open Graph tags so WhatsApp and other link previews say "Ana Quran lesson room" instead of "Jitsi Meet", and serves the preview image below. |
+| `jitsi/config/web/branding/ana-quran.png` | Preview image referenced by `og:image` (copied into `/run/web/config` at boot). |
 
 ```
 jitsi/
@@ -29,7 +31,11 @@ jitsi/
 ├── config/
 │   └── web/                     # overlay config the web image copies at boot
 │       ├── custom-config.js
-│       └── custom-interface_config.js
+│       ├── custom-interface_config.js
+│       ├── nginx-custom/
+│       │   └── branding.conf   # link-preview metadata (title, og:*)
+│       └── branding/
+│           └── ana-quran.png   # og:image for shared room links
 ├── docker-compose.yml           # upstream, two local changes (see below)
 ├── web/ prosody/ jicofo/ jvb/   # upstream images + entrypoints
 └── ...                          # rest of docker-jitsi-meet
@@ -337,11 +343,13 @@ Rotating the key: `ssh-keygen -t ed25519 -C github-actions-jitsi-deploy -f ~/.ss
 replace the matching `authorized_keys` line, update the secret.
 
 **Caveats.** There is no "is a lesson running?" check — a push touching
-`jitsi/**` reconciles containers within seconds. That is fine for config-only
-changes (no restart) but a compose/image change will drop active calls. Docs
-changes under `README`, `FE/` or the API are ignored by the `paths` filter. If
-you want a human gate, delete the `push` trigger and keep only
-`workflow_dispatch`, or attach a GitHub Environment with required reviewers.
+`jitsi/**` reconciles containers within seconds. That is fine for compose or
+image changes (containers are recreated) but overlay edits under
+`jitsi/config/web/**` are only copied into the container at boot, so they need
+`./deploy.sh restart web` before they take effect. Docs changes under `README`,
+`FE/` or the API are ignored by the `paths` filter. If you want a human gate,
+delete the `push` trigger and keep only `workflow_dispatch`, or attach a GitHub
+Environment with required reviewers.
 
 #### Do I have to pull on the VM by hand?
 
@@ -359,6 +367,7 @@ Manual work is only needed in these cases:
 | Rollback | `git revert <sha>`, push, let the Action deploy |
 | Action failed, disabled, or GitHub outage | `ssh ubuntu@<ip>`, then `cd ~/ana-quran-infra && git pull --ff-only && cd jitsi && ./deploy.sh` |
 | You edited `jitsi/.env` on the server | Nothing is pulled (it is gitignored); run `./deploy.sh` to apply |
+| You changed `jitsi/config/web/**` (room UI or link-preview overlay) | `./deploy.sh restart web` — the overlay is copied at container boot |
 | Checking what is actually running | `git -C ~/ana-quran-infra log --oneline -1` |
 | First install on a new box | see "Moving to another provider" |
 
