@@ -82,6 +82,10 @@ mkdir -p config/storage/web config/prosody config/jicofo config/jvb config/tmp
 # when the bind mounts are not writable by 1000.
 if [ "$(uname -s)" = "Linux" ] && [ "$(id -u)" != "1000" ]; then
   sudo chown -R 1000:1000 config
+  # Keep the checkout writable for the deploy user, otherwise the next
+  # `git pull` cannot add or update tracked files under config/.
+  sudo chgrp -R "$(id -g)" config
+  sudo chmod -R g+w config
 fi
 
 log "Starting Jitsi"
