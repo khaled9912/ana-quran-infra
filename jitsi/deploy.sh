@@ -37,11 +37,21 @@ rotate_passwords() {
 sed -i.bak "s#^CONFIG=.*#CONFIG=$PWD/config#" .env
 rm -f .env.bak
 
+# The room's pen/whiteboard is off until the web container knows where the
+# excalidraw server lives. Existing .env files are upgraded in place.
+if ! grep -qE '^WHITEBOARD_COLLAB_SERVER_(URL_BASE|PUBLIC_URL)=' .env; then
+  printf '\nWHITEBOARD_COLLAB_SERVER_URL_BASE=http://whiteboard.meet.jitsi\n' >> .env
+fi
+
+# The whiteboard (pen) runs as an optional compose overlay. Keep it in every
+# invocation so `down`, `restart`, and `logs` see the same project.
+compose() { docker compose -f docker-compose.yml -f whiteboard.yml "$@"; }
+
 # --- commands that never start anything --------------------------------------
 case "${1:-up}" in
-  down)    docker compose down; exit 0 ;;
-  restart) docker compose restart "${2:-web}"; exit 0 ;;
-  logs)    docker compose logs -f "${2:-web}"; exit 0 ;;
+  down)    compose down; exit 0 ;;
+  restart) compose restart "${2:-web}"; exit 0 ;;
+  logs)    compose logs -f "${2:-web}"; exit 0 ;;
   up) ;;
   *) echo "usage: $0 [up|down|restart [service]|logs [service]]" >&2; exit 1 ;;
 esac
@@ -75,7 +85,7 @@ if [ "$(uname -s)" = "Linux" ] && [ "$(id -u)" != "1000" ]; then
 fi
 
 log "Starting Jitsi"
-docker compose up -d
+compose up -d
 
 log "Waiting for the web container"
 http_port="$(env_value HTTP_PORT)"
