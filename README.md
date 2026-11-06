@@ -8,6 +8,16 @@ The web app is a plain client of Jitsi: it loads `/external_api.js` from the
 domain in `NEXT_PUBLIC_JITSI_DOMAIN` and embeds the room in an iframe. Nothing
 here is imported by the app.
 
+**Product context:** [`../docs/business-requirements/06-live-lessons.md`](../docs/business-requirements/06-live-lessons.md) explains the room rules, admin support joins, the lesson pen, and the access limitations. [`../docs/business-requirements/07-transcripts-and-support-review.md`](../docs/business-requirements/07-transcripts-and-support-review.md) explains why transcript capture belongs in this deployment.
+
+Business constraints that must survive infrastructure changes:
+
+- The room is **unlisted, not access-controlled**. Do not claim otherwise in the product; JWT/lobby enforcement is not built yet.
+- A third participant (admin "Academy support") joins confirmed lessons; 1:1 calls are peer-to-peer, but 3+ participants use the JVB relay on UDP 10000.
+- **Never enable the public `/transcripts` static route.** Transcript text must go to the API (`POST /api/lessons/{id}/transcript`), not to a guessable public folder.
+- The room UI is English-only and unbranded by request; keep it that way.
+- The branded camera background is a product feature exposed through the web background picker.
+
 ## What runs
 
 A vendored copy of [docker-jitsi-meet](https://github.com/jitsi/docker-jitsi-meet)
