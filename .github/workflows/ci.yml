@@ -1,0 +1,53 @@
+name: CI
+
+# Nothing here deploys — deploy-jitsi.yml does that from master. This only
+# catches a compose file, config, or script that can no longer be parsed,
+# before it reaches an Oracle box over SSH.
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  infra-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell scripts parse
+        run: |
+          find . -type f -name "*.sh" -not -path "./.git/*" -print0 \
+            | xargs -0 -r -n1 bash -n
+          echo "ok  shell scripts"
+
+      - name: YAML files parse
+        run: |
+          ruby -ryaml -e '
+            failed = []
+            Dir.glob("**/*.{yml,yaml}").reject { |f| f.start_with?(".git/") }.each do |f|
+              begin
+                YAML.load_stream(File.read(f), filename: f)
+              rescue => e
+                failed << "#{f}: #{e.message}"
+              end
+            end
+            failed.each { |f| STDERR.puts f }
+            exit 1 unless failed.empty?
+            puts "ok  yaml files"
+          '
+
+      # rtcstats.yml is deliberately left out: it needs rtcstats/.env, which is
+      # a secret file that never enters the repository.
+      - name: Compose files resolve
+        working-directory: jitsi
+        run: |
+          for f in jigasi.yml jibri.yml prometheus.yml grafana.yml tracing.yml \
+                   log-analyser.yml whiteboard.yml transcriber.yml etherpad.yml; do
+            docker compose -f docker-compose.yml -f "$f" --env-file env.example config -q
+            echo "ok  $f"
+          done
