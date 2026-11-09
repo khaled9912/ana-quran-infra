@@ -16,7 +16,7 @@ Business constraints that must survive infrastructure changes:
 - A third participant (admin "Academy support") joins confirmed lessons; 1:1 calls are peer-to-peer, but 3+ participants use the JVB relay on UDP 10000.
 - **Never enable the public `/transcripts` static route.** Transcript text must go to the API (`POST /api/lessons/{id}/transcript`), not to a guessable public folder.
 - The room UI is English-only and unbranded by request; keep it that way.
-- The branded camera background is a product feature exposed through the web background picker.
+- The branded camera background is mandatory: the web room applies it through the API and hides the background picker, so nobody chooses their own. Mobile cannot apply it (the SDK only does virtual backgrounds on web) and shows the raw camera.
 
 ## What runs
 
@@ -32,8 +32,8 @@ at **`stable-11248-2`**, plus a small deployment overlay:
 | `jitsi/config/web/custom-interface_config.js` | Removes the Jitsi watermark, brand mark and "powered by" footer. |
 | `jitsi/config/web/nginx-custom/branding.conf` | Rewrites the room page's `<title>` / Open Graph tags so WhatsApp and other link previews say "Ana Quran lesson room" instead of "Jitsi Meet", and serves everything under `/branding/` from the overlay. |
 | `jitsi/config/web/branding/ana-quran.png` | Preview image referenced by `og:image`. |
-| `jitsi/config/web/branding/ana-quran-branding.json` | Dynamic branding for the room: lists the academy background under `virtualBackgrounds`, replacing Jitsi's stock images in the background picker. |
-| `jitsi/config/web/branding/ana-quran-lesson-background.jpg` | 1280×720 branded camera background (the source `.svg` sits next to it). |
+| `jitsi/config/web/branding/ana-quran-branding.json` | Dynamic branding for the room: lists the academy background under `virtualBackgrounds` and replaces Jitsi's stock images, so the forced background has something same-origin to load. |
+| `jitsi/config/web/branding/ana-quran-lesson-background.jpg` | 1280×720 branded camera background — the mark sits small on the left so the speaker stays the focus. Jitsi stretches it to the camera's own aspect ratio. Edit the `.svg` next to it, then re-render: `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars --window-size=1280,720 --screenshot=/tmp/bg.png file:///tmp/wrapper.html && sips -s format jpeg -s formatOptions 82 /tmp/bg.png --out ana-quran-lesson-background.jpg` (the wrapper is a `<img>` of the SVG at 1280×720 with zero body margin). |
 
 ```
 jitsi/
