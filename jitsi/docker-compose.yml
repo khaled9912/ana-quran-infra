@@ -16,7 +16,6 @@ services:
             - ${CONFIG:?CONFIG is not set - run ./deploy.sh or set it in .env}/web:/config:Z
             - ${CONFIG:?CONFIG is not set - run ./deploy.sh or set it in .env}/storage/web:/storage:Z
             - ${CONFIG:?CONFIG is not set - run ./deploy.sh or set it in .env}/web/custom-ca:/usr/local/share/ca-certificates:ro,z
-            - ${CONFIG:?CONFIG is not set - run ./deploy.sh or set it in .env}/storage/transcripts:/usr/share/jitsi-meet/transcripts:ro,z
             - ${CONFIG:?CONFIG is not set - run ./deploy.sh or set it in .env}/tmp/web-load-test:/usr/share/jitsi-meet/load-test:Z
         labels:
             service: "jitsi-web"

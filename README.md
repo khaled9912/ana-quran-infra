@@ -14,7 +14,7 @@ Business constraints that must survive infrastructure changes:
 
 - The room is **unlisted, not access-controlled**. Do not claim otherwise in the product; JWT/lobby enforcement is not built yet.
 - A third participant (admin "Academy support") joins confirmed lessons; 1:1 calls are peer-to-peer, but 3+ participants use the JVB relay on UDP 10000.
-- **Never enable the public `/transcripts` static route.** Transcript text must go to the API (`POST /api/lessons/{id}/transcript`), not to a guessable public folder.
+- **Never enable the public `/transcripts` static route.** Transcript text must go to the API (`POST /api/lessons/{id}/transcript`), not to a guessable public folder. `jitsi/config/web/nginx-custom/transcript-privacy.conf` answers `404` for `/transcripts` and everything under it (verified locally with `nginx -t` and curl; not yet deployed).
 - The room UI is English-only and unbranded by request; keep it that way.
 - The camera backdrop is off by default: it is one of the lesson-room feature flags the API serves from `GET /api/config/lesson-room` (`LessonRoom__CameraBackground` on the app server), and both clients disable virtual backgrounds while it is off. When it is on, the picture is the academy's plain green frame with **no logo in it** — the mark belongs to the room's own top-left overlay, never behind live video.
 
@@ -72,7 +72,7 @@ on a real server or on a fresh clone:
 3. `jitsi/.gitignore` re-includes `.env.example`, which upstream's `.env*` rule
    would otherwise hide.
 
-## Current deployment (2026-11-01)
+## Current deployment (2026-11-11)
 
 Jitsi is **self-hosted on one Oracle Cloud Linux VM**. Nothing is deployed to a
 managed video service, and nothing in this repo is imported by the web app —
@@ -80,34 +80,74 @@ Vercel/Netlify host the Next.js frontend, Oracle hosts the rooms.
 
 | | |
 | --- | --- |
-| Provider | Oracle Cloud Infrastructure (OCI), Always Free account |
+| Provider | Oracle Cloud Infrastructure (OCI), Free Tier account with an active Free Trial; not Pay As You Go, confirmed in the console on 2026-11-11 |
 | Region | UK South (London), `uk-london-1`, availability domain AD-1 — roughly 60–80 ms from Egypt |
 | Instance | `ana-quran-instance-20261101`, shape `VM.Standard.A1.Flex` (Ampere, arm64) |
-| Size | **4 OCPU / 24 GB** (23 GiB usable in the OS). This is the *entire* Always Free Ampere allowance for the tenancy — no second A1 instance will ever fit |
+| Size | **2 OCPU / 12 GB**, resized from 4 OCPU / 24 GB on 2026-11-11 and confirmed over SSH (`nproc`: 2; approximately 11.65 GiB RAM available to the OS) |
 | OS | Ubuntu 24.04.5 LTS |
 | Public IPv4 | `143.47.237.128` — 1:1 NAT, so `JVB_ADVERTISE_IPS` must be this public address, never `10.0.0.30` |
 | Private IP | `10.0.0.30` on VNIC `ana-quran-vnic` |
-| Hostname | `meet.143-47-237-128.sslip.io` — temporary, no domain is owned yet |
+| Hostname | `meet.143-47-237-128.sslip.io` — temporary room hostname |
 | Networking | VCN `ana-quran-vc` (10.0.0.0/16), public subnet, internet gateway, NSG `ig-quick-action-NSG` |
 | Firewall | **Three layers**: OCI security list + NSG + iptables baked into the Ubuntu image. A port is open only if all applicable layers allow it |
-| TLS | Caddy 2.11 on the host, Let's Encrypt via HTTP-01, auto-renewing (cert valid to 2027-01-30) |
+| TLS | Caddy 2.11 on the host, Let's Encrypt via HTTP-01, auto-renewing (cert valid to 2027-01-30); HTTPS certificate verification passed on 2026-11-11 |
 | SSH | `ssh -i ~/.ssh/oci-anaquran.key ubuntu@143.47.237.128` (deploy user is **uid 1001**) |
 | Code | `~/ana-quran-infra` on the VM, clone of `khaled9912/ana-quran-infra`; compose project `ana-quran-jitsi` |
-| Containers | `ana-quran-jitsi-{web,prosody,jicofo,jvb}-1`, policy `unless-stopped` |
+| Containers | `ana-quran-jitsi-{web,prosody,jicofo,jvb,whiteboard}-1`, policy `unless-stopped` |
 | Edge config | `/etc/caddy/Caddyfile` — a **host** file, not managed by the repo |
 | Secrets | `~/ana-quran-infra/jitsi/.env` (generated passwords). Back this up; it is gitignored |
 
-Verified on 2026-11-01 from outside the network:
+### Post-resize verification (2026-11-11)
 
-| Check | Expected |
+Read-only SSH and external HTTPS checks after the reboot:
+
+| Check | Observed result |
 | --- | --- |
-| `https://meet.143-47-237-128.sslip.io/` | 200 |
-| `/external_api.js`, `/config.js`, `/http-bind` | 200 |
-| Inbound TCP 80 / 443 | reachable |
-| Inbound UDP 10000 | reachable (proven with `tcpdump -i any udp port 10000` while sending test packets) |
+| Host memory | Approximately 974 MiB used and 10 GiB available shortly after boot; an idle snapshot, not a load test |
+| Root filesystem | 45 GiB filesystem, 5.7 GiB used; this does not establish total OCI provisioned storage |
+| Containers and Caddy | All five containers running; Caddy active; no container restarts or OOM flags, and no error-level entries in the post-reboot logs checked |
+| `https://meet.143-47-237-128.sslip.io/` | HTTP 200; TLS certificate verification passed |
+| `/external_api.js`, `/config.js`, `/http-bind` | HTTP 200 |
+| Video bridge | JVB authenticated with XMPP and registered with Jicofo |
+| UDP 10000 | Listening on the host; external UDP reachability was not retested |
+
+The optional JVB/Jicofo REST monitoring endpoints are not enabled; bridge
+readiness was checked through container state and registration logs instead.
+These checks did not change production settings or restart services.
+**No browser/E2E call, microphone/camera test, or concurrency load test was run.**
+A two-device lesson test is still needed to verify actual audio/video after the
+resize. For relay coverage, test a third participant as well; a successful
+peer-to-peer call alone does not prove JVB media routing.
+
+Inbound TCP 80/443 and external UDP 10000 reachability were previously verified
+on 2026-11-01; the UDP check used packet capture while sending test packets.
 
 `https://143.47.237.128/` (raw IP) fails on purpose — Caddy only answers
 requests whose SNI matches the configured hostname.
+
+### Free Tier status and limits (checked 2026-11-11)
+
+- The console's **Free Tier / Free Trial** banner describes the account, not a
+  sizing error. Resizing does not end the trial or remove that banner. Per
+  [Oracle's Free Tier documentation](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier.htm),
+  the card is not charged unless the account is explicitly upgraded; paid
+  trial resources can be reclaimed after the trial instead of being billed.
+- Oracle's [Always Free resource documentation](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm)
+  currently lists **1,500 OCPU-hours and 9,000 GB-hours per month**, equivalent
+  to **2 OCPU / 12 GB**. The console instead advertised **3,000 / 18,000**,
+  equivalent to **4 OCPU / 24 GB**. This discrepancy is unresolved: the console
+  banner and an “Always Free-eligible” shape label do not prove that 4/24 will
+  remain free for this tenancy after the trial.
+- The instance was manually reduced to **2 OCPU / 12 GB** to fit the lower
+  documented allowance. Do not rely on Oracle to automatically resize an
+  over-limit instance; obtain account-specific confirmation before increasing
+  resources on the assumption they remain free.
+- Always Free compute and boot/block storage must be in the tenancy's **home
+  region**. Combined provisioned boot/block volumes must stay within **200 GB**. Home
+  region status and the full OCI volume inventory have **not** been verified;
+  free space inside the VM is not a substitute for that check.
+- Always Free has no scheduled expiry, but Oracle can reclaim idle compute.
+  Keep backups; free eligibility is not a guarantee of uninterrupted hosting.
 
 ### OCI specifics that cost hours if forgotten
 
@@ -117,9 +157,12 @@ requests whose SNI matches the configured hostname.
   `ana-quran-vnic`.
 - **UDP, not TCP, on 10000.** The security list is easy to fill in wrong; a
   `10000/tcp` row looks correct and silently breaks relay media.
-- **Editing shape** requires the instance to be Stopped; "Edit shape" lives in
-  the **Shape configuration** panel on the Details tab, not in the Actions
-  dropdown.
+- **Editing shape** interrupts service and restarts the instance. Back up
+  important data and wait until no lessons are active. Open the instance's
+  **Shape configuration** editor, keep **Ampere / VM.Standard.A1.Flex**, expand
+  its row using the small triangle, set **2 OCPU / 12 GB**, and save/confirm
+  the restart. Do not terminate or recreate the instance; resizing preserves
+  the boot disk. Recheck the size, services, and a test call after it returns.
 - **Reserved IP.** Assign and reserve the public IP before relying on it — the
   hostname, `PUBLIC_URL` and `JVB_ADVERTISE_IPS` all embed it.
 - **Image firewall.** Oracle's Ubuntu image ships iptables rules that REJECT
@@ -171,11 +214,12 @@ The certificate is local-only: it is gitignored, and production never uses it.
 
 ## Production VPS
 
-Target: Ubuntu 22.04/24.04, **2–4 vCPU / 4–8 GB** while sessions are one-to-one
-(they run peer-to-peer and the server only relays signalling). The live box is
-deliberately oversized at 4 OCPU / 24 GB because transcription will join rooms
-as a third participant, which forces relay. Any provider below works; Oracle is
-the current one only because it is free.
+The current host is Ubuntu 24.04 on **2 OCPU / 12 GB**, verified after the
+2026-11-11 resize. One-to-one sessions prefer peer-to-peer media, but failed
+P2P connections and a third participant require JVB relay. Recording and
+server-side transcription are not running; adding Whisper/Jigasi requires
+separate CPU, memory, and bandwidth measurements, not just spare idle RAM.
+See [Capacity notes](#capacity-notes) for the initial planning target.
 
 ### Oracle Cloud (OCI)
 
@@ -183,10 +227,12 @@ OCI filters traffic twice — in the VCN *and* in an iptables ruleset baked into
 the Ubuntu image that rejects everything except SSH. Opening only one of the two
 is the usual reason a room loads but calls connect with no audio/video.
 
-- **Shape**: Ampere `VM.Standard.A1.Flex` (arm64; the always-free allowance is
-  up to 4 OCPU / 24 GB) or `VM.Standard.E4.Flex` (x86). Not the 1 GB micro
-  shape — the JVMs need 4 GB minimum. The pinned `stable-11248-2` images
-  publish `linux/arm64`, so Ampere works without emulation.
+- **Shape**: Ampere `VM.Standard.A1.Flex` at **2 OCPU / 12 GB** (arm64),
+  matching the lower documented Always Free allowance; see the account-status
+  caveats above. Do not substitute the 1 GB micro shape for this stack.
+  `VM.Standard.E4.Flex` (x86) is not covered by the A1 free allowance. The
+  pinned `stable-11248-2` images publish `linux/arm64`, so Ampere works
+  without emulation.
 - **Image**: Canonical Ubuntu 22.04/24.04.
 - **Public IP**: assign one and reserve it. It is 1:1 NAT, so
   `JVB_ADVERTISE_IPS` takes the **public** IPv4, never the `10.x` address on
@@ -404,18 +450,26 @@ be silently overwritten.
   the release notes — branding settings occasionally move.
 - **Backups**: nothing here is user data. Room history, recordings and class
   reports live in the app and its database.
-- **Restarting the box** is safe; containers use `unless-stopped`.
+- **Restarting the box** interrupts active lessons. Confirm downtime first;
+  containers use `unless-stopped` to resume after boot unless manually stopped.
 
 ## Capacity notes
 
-- Two people in a room negotiate a direct peer-to-peer connection; the server
-  only handles signalling, so 1:1 lessons barely touch the VPS.
-- Three or more participants are relayed by the JVB at roughly
-  `participants × 2.5 Mbps` in, `participants × 2.5 Mbps` out for 720p (~0.5 Mbps
-  at 360p). Vendor benchmarks show a 4 vCPU / 8 GB host relaying around 45
-  simultaneous 720p senders; plan bandwidth before CPU.
-- Meetings have **no duration cap** — that was a meet.jit.si (the free public
-  service) limit, not a Jitsi one.
+- Plan initially for **5–10 simultaneous 1:1 lessons** on **2 OCPU / 12 GB**:
+  5–10 students plus their teachers. This is a conservative planning estimate,
+  **not a measured maximum or a demonstrated concurrency guarantee**.
+- **70 enrolled students** is a reasonable starting target if the timetable
+  keeps peak simultaneous lessons within that range. Total enrollment alone
+  does not determine video-server capacity.
+- Two-person rooms prefer a direct peer-to-peer connection, leaving the VPS
+  mostly handling signalling. If P2P fails, or support joins as a third
+  participant, JVB must relay media. Capacity then depends on active senders,
+  recipients, video quality, network conditions, and server CPU/bandwidth.
+- Recording and server-side speech recognition are **excluded** from this
+  estimate. The post-resize idle snapshot (~1 GiB host RAM used) does not prove
+  loaded capacity. Measure real calls and relay usage before increasing the
+  planned concurrency or adding capture services.
+- Meetings have **no configured duration cap** in this self-hosted setup.
 
 ## Hardening backlog
 
