@@ -16,7 +16,7 @@ Business constraints that must survive infrastructure changes:
 - A third participant (admin "Academy support") joins confirmed lessons; 1:1 calls are peer-to-peer, but 3+ participants use the JVB relay on UDP 10000.
 - **Never enable the public `/transcripts` static route.** Transcript text must go to the API (`POST /api/lessons/{id}/transcript`), not to a guessable public folder.
 - The room UI is English-only and unbranded by request; keep it that way.
-- The branded camera background is mandatory: the web room applies it through the API and hides the background picker, so nobody chooses their own. Mobile cannot apply it (the SDK only does virtual backgrounds on web) and shows the raw camera.
+- The camera backdrop is off by default: it is one of the lesson-room feature flags the API serves from `GET /api/config/lesson-room` (`LessonRoom__CameraBackground` on the app server), and both clients disable virtual backgrounds while it is off. When it is on, the picture is the academy's plain green frame with **no logo in it** — the mark belongs to the room's own top-left overlay, never behind live video.
 
 ## What runs
 
@@ -28,12 +28,12 @@ at **`stable-11248-2`**, plus a small deployment overlay:
 | `jitsi/.env.example` | Non-secret configuration (public URL, ports, media IP, auth flags). `.env` is generated from it. |
 | `jitsi/deploy.sh` | Validates `.env`, generates the component passwords, starts/stops the stack. |
 | `jitsi/Caddyfile` | Production edge: TLS + WebSocket proxy in front of the web container. |
-| `jitsi/config/web/custom-config.js` | Forces the room UI to English (otherwise it follows the viewer's browser language and Arabic browsers get an RTL room) and points dynamic branding at the local JSON below. |
+| `jitsi/config/web/custom-config.js` | Forces the room UI to English (otherwise it follows the viewer's browser language and Arabic browsers get an RTL room). Also points `dynamicBrandingUrl` at the branding file below and blocks custom background uploads. The clients only ask the room for a background when the `LessonRoom__CameraBackground` flag is on, so this config is inert while the flag is off. |
 | `jitsi/config/web/custom-interface_config.js` | Removes the Jitsi watermark, brand mark and "powered by" footer. |
 | `jitsi/config/web/nginx-custom/branding.conf` | Rewrites the room page's `<title>` / Open Graph tags so WhatsApp and other link previews say "Ana Quran lesson room" instead of "Jitsi Meet", and serves everything under `/branding/` from the overlay. |
 | `jitsi/config/web/branding/ana-quran.png` | Preview image referenced by `og:image`. |
-| `jitsi/config/web/branding/ana-quran-branding.json` | Dynamic branding for the room: lists the academy background under `virtualBackgrounds` and replaces Jitsi's stock images, so the forced background has something same-origin to load. |
-| `jitsi/config/web/branding/ana-quran-lesson-background.jpg` | 1280×720 branded camera background — the mark sits small on the left so the speaker stays the focus. Jitsi stretches it to the camera's own aspect ratio. Edit the `.svg` next to it, then re-render: `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars --window-size=1280,720 --screenshot=/tmp/bg.png file:///tmp/wrapper.html && sips -s format jpeg -s formatOptions 82 /tmp/bg.png --out ana-quran-lesson-background.jpg` (the wrapper is a `<img>` of the SVG at 1280×720 with zero body margin). |
+| `jitsi/config/web/branding/ana-quran-branding.json` | Dynamic branding: the one picture the background picker offers. |
+| `jitsi/config/web/branding/ana-quran-lesson-background.jpg` | 1280×720 academy backdrop — a plain deep green frame with **no logo in it**, because the room overlay already carries the mark and nothing should sit behind live video. The web client applies it automatically when its flag is on; the native SDK has no such command, so mobile students pick it from the list. Jitsi stretches it to the camera's own aspect ratio. To change it, edit the `.svg` next to it, then re-render: `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars --window-size=1280,720 --screenshot=/tmp/bg.png file:///tmp/wrapper.html && sips -s format jpeg -s formatOptions 82 /tmp/bg.png --out ana-quran-lesson-background.jpg` (the wrapper is an `<img>` of the SVG at 1280×720 with zero body margin). |
 
 ```
 jitsi/
@@ -48,9 +48,9 @@ jitsi/
 │       │   └── branding.conf   # link-preview metadata, serves /branding/
 │       └── branding/
 │           ├── ana-quran.png                    # og:image for shared links
-│           ├── ana-quran-branding.json          # dynamic branding (virtual backgrounds)
-│           ├── ana-quran-lesson-background.jpg  # camera background shown in the picker
-│           └── ana-quran-lesson-background.svg  # editable source for the background
+│           ├── ana-quran-branding.json          # offers the backdrop below in the picker
+│           ├── ana-quran-lesson-background.jpg  # logo-free green backdrop
+│           └── ana-quran-lesson-background.svg  # editable source for the image above
 ├── docker-compose.yml           # upstream, two local changes (see below)
 ├── web/ prosody/ jicofo/ jvb/   # upstream images + entrypoints
 └── ...                          # rest of docker-jitsi-meet

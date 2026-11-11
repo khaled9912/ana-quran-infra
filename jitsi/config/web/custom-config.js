@@ -1,11 +1,14 @@
 // Keep the room UI in English regardless of the viewer's browser locale.
 config.defaultLanguage = 'en';
 
-// Branding is served from this deployment so the virtual background image is
-// same-origin and does not need CORS headers.
+// The academy backdrop is a switch, not a default: it reaches a room only when
+// the API reports LessonRoom__CameraBackground as on, which is when both clients
+// stop disabling virtual backgrounds. This file puts the single branded picture
+// in their picker.
 config.dynamicBrandingUrl = '/branding/ana-quran-branding.json';
 
-// Offer only the branded image; participants cannot add their own backgrounds.
+// Served from this deployment, so the image is same-origin with the room and
+// needs no CORS headers; participants cannot add backgrounds of their own.
 config.virtualBackground = {
     ...(config.virtualBackground || {}),
     disableAddingImages: true,
